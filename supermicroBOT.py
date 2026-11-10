@@ -177,7 +177,12 @@ def fetch_products():
     blocked = False
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=HEADLESS)
+        proxy_server = os.environ.get("PROXY_SERVER", "").strip()
+        launch_options = {"headless": HEADLESS}
+        if proxy_server:
+            launch_options["proxy"] = {"server": proxy_server}
+            print("Using tested public proxy for Supermicro requests.")
+        browser = playwright.chromium.launch(**launch_options)
 
         try:
             page = browser.new_page(
