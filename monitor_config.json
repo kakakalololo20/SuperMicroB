@@ -1,0 +1,7 @@
+{
+  "max_scan_gap_minutes": 90,
+  "watchdog_interval_minutes": 10,
+  "scan_interval_minutes": 60,
+  "retry_attempts": 3,
+  "retry_delay_seconds": 30
+}
