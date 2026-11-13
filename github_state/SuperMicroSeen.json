@@ -1,0 +1,50 @@
+{
+  "https://store.supermicro.com/us_en/supermicro-nvidia-rtx-5080-gddr7-pcie-5-0-graphics-card.html": {
+    "name": "Supermicro NVIDIA GeForce RTX 5080 16GB GDDR7 PCIe 5.0 Graphics Card (GPU-NVRTX5080-16P3)",
+    "price": "N/A",
+    "stock": "in_stock",
+    "source": "stock-element"
+  },
+  "https://store.supermicro.com/us_en/supermicro-nvidia-rtx-5070-gddr7-pcie-5-0-graphics-card.html": {
+    "name": "Supermicro NVIDIA GeForce RTX 5070 12GB GDDR7 PCIe 5.0 Graphics Card (GPU-NVRTX5070-12P3)",
+    "price": "N/A",
+    "stock": "out_of_stock",
+    "source": "contact-us-only"
+  },
+  "https://store.supermicro.com/us_en/supermicro-nvidia-rtx-5070-ti-gddr7-pcie-5-0-graphics-card.html": {
+    "name": "Supermicro NVIDIA GeForce RTX 5070 Ti 16GB GDDR7 PCIe 5.0 Graphics Card (GPU-NVRTX5070T-16P3)",
+    "price": "N/A",
+    "stock": "out_of_stock",
+    "source": "contact-us-only"
+  },
+  "https://store.supermicro.com/us_en/supermicro-gpu-geforce-nvrtx5060-8m2-oc.html": {
+    "name": "Supermicro MSI GeForce RTX 5060 8GB Shadow 2X OC GDDR7 PCIe 5.0 Graphics Card (GPU-NVRTX5060-8M2-OC)",
+    "price": "N/A",
+    "stock": "out_of_stock",
+    "source": "stock-element"
+  },
+  "https://store.supermicro.com/us_en/supermicro-msi-rtx-5070ti-16gb-shadow-3x-oc-graphics-card.html": {
+    "name": "Supermicro MSI GeForce RTX 5070Ti 16GB SHADOW 3X OC Graphics Card (GPU-NVRTX5070T-16M3-OC)",
+    "price": "N/A",
+    "stock": "out_of_stock",
+    "source": "stock-element"
+  },
+  "https://store.supermicro.com/us_en/supermicro-msi-rtx-5060ti-16gb-ventus-2x-oc-plus-graphics-card.html": {
+    "name": "Supermicro MSI GeForce RTX 5060Ti 16GB VENTUS 2X OC PLUS Graphics Card (GPU-NVRTX5060T-16M2-OC-P)",
+    "price": "N/A",
+    "stock": "out_of_stock",
+    "source": "stock-element"
+  },
+  "https://store.supermicro.com/us_en/supermicro-gpu-geforce-nvrtx5070-12m2-oc.html": {
+    "name": "Supermicro MSI GeForce RTX 5070 12GB SHADOW 2X OC GDDR7 PCIe 5.0 Graphics Card (GPU-NVRTX5070-12M2-OC)",
+    "price": "N/A",
+    "stock": "out_of_stock",
+    "source": "stock-element"
+  },
+  "https://store.supermicro.com/us_en/server-accessories/supermicro-nvidia-rtx-5000-ada-32gb-gddr6.html": {
+    "name": "Supermicro NVIDIA Quadro RTX 5000 ADA 32GB GDDR6 PCIe 4.0 Active Cooling Graphics Card (GPU-NVQRTX5000-ADA)",
+    "price": "N/A",
+    "stock": "out_of_stock",
+    "source": "contact-us-only"
+  }
+}
