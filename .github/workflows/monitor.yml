@@ -19,6 +19,7 @@ jobs:
 
     env:
       BOT_ENV: github
+      HEADLESS: "0"
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
@@ -43,6 +44,9 @@ jobs:
       - name: Install Playwright Chromium
         run: python -m playwright install --with-deps chromium
 
+      - name: Install Xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
       - name: Prepare isolated GitHub state
         id: prepare_state
         run: |
@@ -65,7 +69,7 @@ jobs:
           done
 
       - name: Run monitor
-        run: python supermicroBOT.py
+        run: xvfb-run -a python supermicroBOT.py
 
       - name: Save isolated GitHub state
         if: always() && steps.prepare_state.outcome == 'success'
