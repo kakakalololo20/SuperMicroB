@@ -299,6 +299,54 @@ def append_history(record):
     save_json(HISTORY_FILE, history)
 
 
+
+def publish_server_history():
+    """رفع سجل نجاحات Debian إلى main دون المساس ببقية الملفات."""
+    if BOT_ENV != "debian":
+        return
+
+    for attempt in range(1, 6):
+        run_git(["fetch", "origin", "main"])
+        run_git(["add", "--", "check_history_server.json"])
+
+        staged = run_git(
+            ["diff", "--cached", "--quiet", "--", "check_history_server.json"],
+            check=False,
+        )
+
+        if staged.returncode == 0:
+            print("سجل السيرفر محدث بالفعل على GitHub.")
+            return
+
+        run_git(["config", "user.name", "Supermicro Monitor"])
+        run_git([
+            "config", "user.email",
+            "supermicro-monitor@users.noreply.github.com",
+        ])
+
+        commit = run_git([
+            "commit", "-m", "Update server success history",
+            "--", "check_history_server.json",
+        ], check=False)
+
+        if commit.returncode != 0:
+            raise RuntimeError("تعذر حفظ سجل السيرفر في Git")
+
+        push = run_git(["push", "origin", "HEAD:main"], check=False)
+
+        if push.returncode == 0:
+            print("تم رفع سجل السيرفر إلى GitHub بنجاح.")
+            return
+
+        print(f"تعذر رفع سجل السيرفر، المحاولة {attempt}/5")
+        run_git(["fetch", "origin", "main"])
+        run_git(["reset", "--mixed", "origin/main"])
+
+        if attempt < 5:
+            time.sleep(2)
+
+    raise RuntimeError("فشل رفع سجل السيرفر بعد 5 محاولات")
+
 def decide(atc, stock_text, page_text=""):
     stock = re.sub(r"\s+", " ", stock_text.lower()).strip()
     body = re.sub(r"\s+", " ", page_text.lower()).strip()
@@ -668,6 +716,8 @@ def main():
         "products": len(current),
         "first_population": first_population,
     })
+
+    publish_server_history()
 
     print()
     print("تم تحديث قاعدة المنتجات المركزية.")
