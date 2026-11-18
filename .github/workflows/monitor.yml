@@ -62,11 +62,13 @@ jobs:
 
           mkdir -p github_state
 
-          for file in SuperMicroSeen.json SuperMicroState.json last_success.json; do
+          for file in SuperMicroState.json last_success.json check_history.json; do
             if [ -f "/tmp/monitor-state/github_state/$file" ]; then
               cp "/tmp/monitor-state/github_state/$file" github_state/
             fi
           done
+
+          rm -f github_state/SuperMicroSeen.json
 
       - name: Run monitor
         run: xvfb-run -a python supermicroBOT.py
@@ -75,14 +77,15 @@ jobs:
         if: always() && steps.prepare_state.outcome == 'success'
         run: |
           mkdir -p /tmp/monitor-state/github_state
+          rm -f /tmp/monitor-state/github_state/SuperMicroSeen.json
           cp -a github_state/. /tmp/monitor-state/github_state/
 
-          git -C /tmp/monitor-state add github_state
+          git -C /tmp/monitor-state add -f -A github_state
 
           if ! git -C /tmp/monitor-state diff --cached --quiet; then
             git -C /tmp/monitor-state config user.name "github-actions[bot]"
             git -C /tmp/monitor-state config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git -C /tmp/monitor-state commit -m "Update Supermicro monitor state"
+            git -C /tmp/monitor-state commit -m "Update Supermicro GitHub state"
             git -C /tmp/monitor-state push origin monitor-state
           else
             echo "No state changes."

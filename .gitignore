@@ -5,5 +5,7 @@ __pycache__/
 *.bak
 debug_stock.txt
 /last_success.json
-/SuperMicroSeen.json
 /SuperMicroState.json
+/check_history.json
+/github_state/
+/backup_before_central_db/

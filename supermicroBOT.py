@@ -4,39 +4,65 @@ import re
 import time
 import urllib.parse
 import urllib.request
+import subprocess
+from pathlib import Path
+from datetime import datetime, timezone
+
 from playwright.sync_api import sync_playwright
 
 
+ROOT = Path(__file__).resolve().parent
+URL = "https://store.supermicro.com/us_en/catalogsearch/result/?q=rtx%205"
+MUST_CONTAIN = "RTX 5"
+
+BOT_ENV = os.environ.get("BOT_ENV", "debian").strip().lower()
+if BOT_ENV not in ("debian", "github"):
+    raise ValueError("BOT_ENV must be debian or github")
+
+# قاعدة المنتجات مشتركة، أما ملفات الحالة فمستقلة لكل بيئة.
+DB_FILE = ROOT / "SuperMicroSeen.json"
+STATE_DIR = ROOT / "github_state" if BOT_ENV == "github" else ROOT
+STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+STATE_FILE = STATE_DIR / "SuperMicroState.json"
+LAST_SUCCESS_FILE = STATE_DIR / "last_success.json"
+HISTORY_FILE = STATE_DIR / "check_history.json"
+CONFIG_FILE = ROOT / "monitor_config.json"
+
+HEADLESS = os.environ.get("HEADLESS", "1") != "0"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+TELEGRAM_ENABLED = bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
+
+LABELS = {
+    "in_stock": "متوفر للشراء",
+    "out_of_stock": "غير متوفر",
+    "preorder": "طلب مسبق",
+    "unknown": "غير معروف",
+}
+
+
 def load_env_file():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, value = line.split("=", 1)
-                    os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-    except FileNotFoundError:
-        pass
+    path = ROOT / ".env"
+    if not path.exists():
+        return
+
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                os.environ.setdefault(
+                    key.strip(), value.strip().strip('"').strip("'")
+                )
 
 
 load_env_file()
 
-# البحث في الموقع عن RTX 5 Series
-URL = "https://store.supermicro.com/us_en/catalogsearch/result/?q=rtx%205"
-
-BOT_ENV = os.environ.get("BOT_ENV", "debian").strip().lower()
-
-# فصل ملفات الحالة بين Debian وGitHub Actions
-STATE_DIR = "github_state" if BOT_ENV == "github" else "."
-
-if STATE_DIR != ".":
-    os.makedirs(STATE_DIR, exist_ok=True)
-
-SEEN_FILE = os.path.join(STATE_DIR, "SuperMicroSeen.json")
-STATE_FILE = os.path.join(STATE_DIR, "SuperMicroState.json")
-CONFIG_FILE = "monitor_config.json"
-LAST_SUCCESS_FILE = os.path.join(STATE_DIR, "last_success.json")
+# إعادة قراءة Telegram بعد تحميل .env
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+TELEGRAM_ENABLED = bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
 
 
 def load_config():
@@ -49,8 +75,9 @@ def load_config():
     }
 
     try:
-        with open(CONFIG_FILE, encoding="utf-8") as f:
-            config = json.load(f)
+        config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        if not isinstance(config, dict):
+            config = {}
     except (FileNotFoundError, json.JSONDecodeError):
         config = {}
 
@@ -61,23 +88,6 @@ def load_config():
 
 
 CONFIG = load_config()
-
-# أي اسم منتج يحتوي على RTX 5 سيتم تضمينه
-MUST_CONTAIN = "RTX 5"
-
-HEADLESS = os.environ.get("HEADLESS", "1") != "0"
-
-# Telegram متوقف مؤقتاً
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-TELEGRAM_ENABLED = bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
-
-LABELS = {
-    "in_stock": "متوفر للشراء",
-    "out_of_stock": "غير متوفر",
-    "preorder": "طلب مسبق",
-    "unknown": "غير معروف",
-}
 
 
 def notify(message):
@@ -95,7 +105,9 @@ def notify(message):
         }).encode("utf-8")
 
         request = urllib.request.Request(
-            "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage",
+            "https://api.telegram.org/bot"
+            + TELEGRAM_BOT_TOKEN
+            + "/sendMessage",
             data=data,
             method="POST",
         )
@@ -109,57 +121,185 @@ def notify(message):
             print("Telegram رفض إرسال الرسالة.")
 
     except Exception as exc:
-        print("فشل إرسال Telegram:", type(exc).__name__)
+        print("فشل إرسال Telegram:", type(exc).__name__, str(exc))
 
 
 def load_json(path, default):
-    if not os.path.exists(path):
+    if not path.exists():
         return default
 
     try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-
-        if isinstance(data, dict):
-            return data
-
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, type(default)) else default
     except Exception:
-        pass
-
-    print("الملف", path, "تالف، سيتم نقله.")
-
-    try:
-        os.replace(path, path + ".bad")
-    except Exception:
-        pass
-
-    return default
+        print("تعذر قراءة الملف:", path)
+        return default
 
 
 def save_json(path, data):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    temp_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    temp_path.replace(path)
 
 
-def normalize(seen):
-    out = {}
+def normalize(products):
+    result = {}
 
-    for url, data in seen.items():
+    if not isinstance(products, dict):
+        return result
+
+    for url, data in products.items():
         if not isinstance(data, dict):
             continue
 
-        out[url] = {
+        result[url] = {
             "name": data.get("name", ""),
             "price": data.get("price", "N/A"),
             "stock": data.get("stock", "unknown"),
             "source": data.get("source", ""),
         }
 
-    return out
+        if data.get("checked_at"):
+            result[url]["checked_at"] = data["checked_at"]
+
+    return result
+
+
+def run_git(args, check=True):
+    result = subprocess.run(
+        ["git"] + args,
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    if check and result.returncode != 0:
+        raise RuntimeError(
+            "Git command failed: git "
+            + " ".join(args)
+            + "\n"
+            + (result.stderr or result.stdout).strip()
+        )
+
+    return result
+
+
+def read_remote_database():
+    result = run_git(
+        ["show", "origin/main:SuperMicroSeen.json"],
+        check=False,
+    )
+
+    if result.returncode != 0:
+        return {}
+
+    try:
+        data = json.loads(result.stdout)
+        if not isinstance(data, dict):
+            raise ValueError("قاعدة المنتجات ليست JSON object")
+        return normalize(data)
+    except Exception as exc:
+        raise RuntimeError("قاعدة المنتجات على GitHub تالفة") from exc
+
+
+def load_central_database():
+    # لا نعتمد على نسخة محلية قديمة؛ نقرأ آخر نسخة من main.
+    run_git(["fetch", "origin", "main"])
+    return read_remote_database()
+
+
+def merge_databases(remote, current):
+    merged = normalize(remote)
+
+    for url, data in current.items():
+        merged[url] = dict(data)
+
+    return merged
+
+
+def publish_database(current, checked_at):
+    """دمج آمن مع main وإعادة المحاولة عند حدوث تعارض في الدفع."""
+    for attempt in range(1, 6):
+        print(f"نشر قاعدة المنتجات: المحاولة {attempt}/5")
+
+        run_git(["fetch", "origin", "main"])
+        remote = read_remote_database()
+        merged = merge_databases(remote, current)
+
+        save_json(DB_FILE, merged)
+
+        run_git(["add", "--", "SuperMicroSeen.json"])
+
+        staged = run_git(
+            ["diff", "--cached", "--quiet", "--", "SuperMicroSeen.json"],
+            check=False,
+        )
+
+        if staged.returncode == 0:
+            print("قاعدة المنتجات المركزية محدثة بالفعل.")
+            return merged
+
+        run_git(["config", "user.name", "Supermicro Monitor"])
+        run_git([
+            "config", "user.email",
+            "supermicro-monitor@users.noreply.github.com",
+        ])
+
+        commit = run_git(
+            [
+                "commit",
+                "-m",
+                f"Update Supermicro product database ({checked_at})",
+                "--",
+                "SuperMicroSeen.json",
+            ],
+            check=False,
+        )
+
+        if commit.returncode != 0:
+            check_again = run_git(
+                ["diff", "--cached", "--quiet", "--", "SuperMicroSeen.json"],
+                check=False,
+            )
+            if check_again.returncode == 0:
+                return merged
+            raise RuntimeError("تعذر إنشاء commit لقاعدة المنتجات")
+
+        push = run_git(
+            ["push", "origin", "HEAD:main"],
+            check=False,
+        )
+
+        if push.returncode == 0:
+            print("تم رفع قاعدة المنتجات إلى GitHub بنجاح.")
+            return merged
+
+        print("تعذر الدفع، سيتم جلب آخر نسخة ومحاولة الدمج مجدداً.")
+        print((push.stderr or push.stdout).strip()[-1000:])
+
+        run_git(["fetch", "origin", "main"])
+        run_git(["reset", "--mixed", "origin/main"])
+
+        if attempt < 5:
+            time.sleep(2)
+
+    raise RuntimeError("فشل رفع قاعدة المنتجات بعد 5 محاولات")
+
+
+def append_history(record):
+    history = load_json(HISTORY_FILE, [])
+    if not isinstance(history, list):
+        history = []
+
+    history.append(record)
+    history = history[-500:]
+    save_json(HISTORY_FILE, history)
 
 
 def decide(atc, stock_text, page_text=""):
-    """تحديد حالة المنتج من نص صفحة المنتج، دون الاعتماد على زر الشراء وحده."""
     stock = re.sub(r"\s+", " ", stock_text.lower()).strip()
     body = re.sub(r"\s+", " ", page_text.lower()).strip()
 
@@ -172,7 +312,6 @@ def decide(atc, stock_text, page_text=""):
     if "in stock" in stock:
         return "in_stock", "stock-element"
 
-    # حسب معيارنا الحالي: المنتج الذي لا يتيح الشراء المباشر يعتبر غير متاح.
     if "contact us for more info" in body:
         return "out_of_stock", "contact-us-only"
 
@@ -215,7 +354,6 @@ def check_stock(page, url):
     except Exception:
         page_text = ""
 
-    # قراءة زر الشراء للتشخيص فقط.
     atc = None
     try:
         locator = page.locator("#product-addtocart-button")
@@ -237,11 +375,13 @@ def dump_debug(name, url, page):
     except Exception:
         body = ""
 
-    with open("debug_stock.txt", "w", encoding="utf-8") as file:
-        file.write("PRODUCT: " + name + "\n")
-        file.write("URL: " + url + "\n\n")
-        file.write("PAGE TEXT:\n")
-        file.write(body[:5000])
+    (ROOT / "debug_stock.txt").write_text(
+        "PRODUCT: " + name + "\n"
+        + "URL: " + url + "\n\n"
+        + "PAGE TEXT:\n"
+        + body[:5000],
+        encoding="utf-8",
+    )
 
 
 def skip_heavy(route):
@@ -256,20 +396,15 @@ def fetch_products():
 
     with sync_playwright() as playwright:
         proxy_server = os.environ.get("PROXY_SERVER", "").strip()
-        launch_options = {
-            "headless": HEADLESS,
-        }
+        launch_options = {"headless": HEADLESS}
 
-        # Debian يستخدم Chromium المثبت بالنظام،
-        # وGitHub Actions يستخدم Chromium الذي يديره Playwright.
         system_chromium = "/usr/bin/chromium"
-        if os.environ.get("BOT_ENV", "debian").lower() == "debian":
-            if os.path.exists(system_chromium):
-                launch_options["executable_path"] = system_chromium
+        if BOT_ENV == "debian" and os.path.exists(system_chromium):
+            launch_options["executable_path"] = system_chromium
 
         if proxy_server:
             launch_options["proxy"] = {"server": proxy_server}
-            print("Using tested public proxy for Supermicro requests.")
+            print("Using configured proxy for Supermicro requests.")
 
         browser = playwright.chromium.launch(**launch_options)
 
@@ -278,7 +413,6 @@ def fetch_products():
                 viewport={"width": 1366, "height": 900},
                 locale="en-US",
             )
-
             page.route("**/*", skip_heavy)
 
             response = page.goto(
@@ -291,7 +425,9 @@ def fetch_products():
             print("http status:", status)
 
             if status >= 400 or status == 0:
-                raise RuntimeError("HTTP " + str(status) + " عند فتح صفحة البحث")
+                raise RuntimeError(
+                    "HTTP " + str(status) + " عند فتح صفحة البحث"
+                )
 
             try:
                 page.wait_for_selector(
@@ -308,7 +444,9 @@ def fetch_products():
 
             for element in page.locator("div.result-wrapper").all():
                 try:
-                    name = element.locator("h3.result-title").inner_text().strip()
+                    name = element.locator(
+                        "h3.result-title"
+                    ).inner_text().strip()
                 except Exception:
                     continue
 
@@ -321,7 +459,10 @@ def fetch_products():
 
                 href = urllib.parse.urljoin(URL, href)
 
-                match = re.search(r"\\$[\\d,]+\\.\\d{2}", element.inner_text())
+                match = re.search(
+                    r"\$[\d,]+\.\d{2}",
+                    element.inner_text(),
+                )
                 price = match.group(0) if match else "N/A"
 
                 items[href] = {
@@ -334,7 +475,9 @@ def fetch_products():
             print("Products discovered:", len(items))
 
             if not items:
-                raise RuntimeError("لم يتم العثور على أي منتجات مطابقة لـ RTX 5")
+                raise RuntimeError(
+                    "لم يتم العثور على أي منتجات مطابقة لـ RTX 5"
+                )
 
             saved_debug = False
 
@@ -343,7 +486,11 @@ def fetch_products():
 
                 if source.startswith("http ") or source == "error":
                     raise RuntimeError(
-                        "فشل فحص صفحة المنتج: " + data["name"] + " (" + source + ")"
+                        "فشل فحص صفحة المنتج: "
+                        + data["name"]
+                        + " ("
+                        + source
+                        + ")"
                     )
 
                 data["stock"] = stock
@@ -360,7 +507,7 @@ def fetch_products():
         finally:
             browser.close()
 
-    return items, False
+    return items
 
 
 def fetch_products_with_retry():
@@ -387,17 +534,35 @@ def fetch_products_with_retry():
 
 
 def main():
-    seen = normalize(load_json(SEEN_FILE, {}))
+    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     state = load_json(STATE_FILE, {})
-
     fails = int(state.get("fails", 0))
     alerted = bool(state.get("alerted", False))
 
     try:
-        current, blocked = fetch_products_with_retry()
+        seen = load_central_database()
+    except Exception as exc:
+        print("تعذر قراءة قاعدة المنتجات المركزية:", exc)
+        fails += 1
+        if not alerted:
+            notify(
+                "🚨 تعذر الاتصال بقاعدة Supermicro المركزية على GitHub\n"
+                + str(exc)[:700]
+            )
+            alerted = True
+        save_json(STATE_FILE, {"fails": fails, "alerted": alerted})
+        append_history({
+            "checked_at": started_at,
+            "environment": BOT_ENV,
+            "result": "database_error",
+            "error": str(exc)[:500],
+        })
+        raise
 
-        if blocked or not current:
-            raise RuntimeError("الفحص لم يُرجع نتائج صالحة.")
+    try:
+        current = fetch_products_with_retry()
+        if not current:
+            raise RuntimeError("الفحص لم يُرجع منتجات.")
 
     except Exception as exc:
         fails += 1
@@ -406,14 +571,42 @@ def main():
 
         if not alerted:
             notify(
-                "🚨 تعذر فحص منتجات Supermicro بعد 3 محاولات"
-                + "\\nالسبب: "
+                "🚨 تعذر فحص منتجات Supermicro بعد محاولات الإعادة\n"
+                + "السبب: "
                 + str(exc)[:800]
             )
             alerted = True
 
         save_json(STATE_FILE, {"fails": fails, "alerted": alerted})
+        append_history({
+            "checked_at": started_at,
+            "environment": BOT_ENV,
+            "result": "scan_error",
+            "error": str(exc)[:500],
+        })
         return
+
+    checked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    # أول تعبئة للقاعدة لا ترسل تنبيهات منتجات جديدة.
+    first_population = len(seen) == 0
+
+    for data in current.values():
+        data["checked_at"] = checked_at
+
+    try:
+        publish_database(current, checked_at)
+    except Exception as exc:
+        print("فشل نشر قاعدة المنتجات:", exc)
+        save_json(STATE_FILE, {"fails": fails + 1, "alerted": alerted})
+        append_history({
+            "checked_at": checked_at,
+            "environment": BOT_ENV,
+            "result": "publish_error",
+            "products": len(current),
+            "error": str(exc)[:500],
+        })
+        raise
 
     if alerted:
         notify("✅ عاد بوت Supermicro للعمل بنجاح.")
@@ -437,7 +630,9 @@ def main():
 
     print()
 
-    if seen:
+    if first_population:
+        print("أول تعبئة للقاعدة المركزية: تم الحفظ بدون تنبيهات تغيّر المخزون.")
+    else:
         changes = 0
 
         for url, data in current.items():
@@ -456,7 +651,6 @@ def main():
                 )
                 changes += 1
                 continue
-
 
             old_stock = old.get("stock", "unknown")
 
@@ -483,22 +677,21 @@ def main():
 
         if changes == 0:
             print("ما فيه تغييرات.")
-    else:
-        print("أول تشغيل: تم حفظ القائمة بدون إشعارات.")
 
-    # دمج النتائج الحالية مع السابقة والإبقاء على المنتجات التي اختفت من البحث.
-    merged = dict(seen)
-    merged.update(current)
-    save_json(SEEN_FILE, merged)
+    save_json(LAST_SUCCESS_FILE, {"last_success": time.time()})
+
+    append_history({
+        "checked_at": checked_at,
+        "environment": BOT_ENV,
+        "result": "success",
+        "products": len(current),
+        "first_population": first_population,
+    })
 
     print()
-    print("تم حفظ البيانات بنجاح.")
-
-    success_data = {
-        "last_success": time.time()
-    }
-    save_json(LAST_SUCCESS_FILE, success_data)
-    print("تم تحديث وقت آخر فحص ناجح.")
+    print("تم تحديث قاعدة المنتجات المركزية.")
+    print("تم حفظ حالة البيئة:", BOT_ENV)
+    print("تم تحديث سجل الفحوص.")
 
 
 if __name__ == "__main__":
