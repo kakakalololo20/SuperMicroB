@@ -26,7 +26,7 @@ STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 STATE_FILE = STATE_DIR / "SuperMicroState.json"
 LAST_SUCCESS_FILE = STATE_DIR / "last_success.json"
-HISTORY_FILE = STATE_DIR / "check_history.json"
+HISTORY_FILE = STATE_DIR / ("check_history_server.json" if BOT_ENV == "debian" else "check_history_github.json")
 CONFIG_FILE = ROOT / "monitor_config.json"
 
 HEADLESS = os.environ.get("HEADLESS", "1") != "0"
@@ -551,12 +551,6 @@ def main():
             )
             alerted = True
         save_json(STATE_FILE, {"fails": fails, "alerted": alerted})
-        append_history({
-            "checked_at": started_at,
-            "environment": BOT_ENV,
-            "result": "database_error",
-            "error": str(exc)[:500],
-        })
         raise
 
     try:
@@ -578,12 +572,6 @@ def main():
             alerted = True
 
         save_json(STATE_FILE, {"fails": fails, "alerted": alerted})
-        append_history({
-            "checked_at": started_at,
-            "environment": BOT_ENV,
-            "result": "scan_error",
-            "error": str(exc)[:500],
-        })
         return
 
     checked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -599,13 +587,6 @@ def main():
     except Exception as exc:
         print("فشل نشر قاعدة المنتجات:", exc)
         save_json(STATE_FILE, {"fails": fails + 1, "alerted": alerted})
-        append_history({
-            "checked_at": checked_at,
-            "environment": BOT_ENV,
-            "result": "publish_error",
-            "products": len(current),
-            "error": str(exc)[:500],
-        })
         raise
 
     if alerted:
@@ -682,7 +663,7 @@ def main():
 
     append_history({
         "checked_at": checked_at,
-        "environment": BOT_ENV,
+        "channel": "server" if BOT_ENV == "debian" else "github",
         "result": "success",
         "products": len(current),
         "first_population": first_population,

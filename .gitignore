@@ -9,3 +9,5 @@ debug_stock.txt
 /check_history.json
 /github_state/
 /backup_before_central_db/
+
+/check_history_server.json

@@ -62,13 +62,13 @@ jobs:
 
           mkdir -p github_state
 
-          for file in SuperMicroState.json last_success.json check_history.json; do
+          for file in SuperMicroState.json last_success.json check_history_github.json; do
             if [ -f "/tmp/monitor-state/github_state/$file" ]; then
               cp "/tmp/monitor-state/github_state/$file" github_state/
             fi
           done
 
-          rm -f github_state/SuperMicroSeen.json
+          rm -f github_state/SuperMicroSeen.json github_state/check_history.json
 
       - name: Run monitor
         run: xvfb-run -a python supermicroBOT.py
@@ -77,7 +77,7 @@ jobs:
         if: always() && steps.prepare_state.outcome == 'success'
         run: |
           mkdir -p /tmp/monitor-state/github_state
-          rm -f /tmp/monitor-state/github_state/SuperMicroSeen.json
+          rm -f /tmp/monitor-state/github_state/SuperMicroSeen.json /tmp/monitor-state/github_state/check_history.json
           cp -a github_state/. /tmp/monitor-state/github_state/
 
           git -C /tmp/monitor-state add -f -A github_state
