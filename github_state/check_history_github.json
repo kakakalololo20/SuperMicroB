@@ -1,7 +1,7 @@
 [
   {
-    "checked_at": "2026-11-18T19:29:54+00:00",
-    "environment": "github",
+    "checked_at": "2026-11-18T20:02:47+00:00",
+    "channel": "github",
     "result": "success",
     "products": 8,
     "first_population": false
