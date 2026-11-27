@@ -670,5 +670,12 @@
     "result": "success",
     "products": 8,
     "first_population": false
+  },
+  {
+    "checked_at": "2026-11-27T12:02:02+00:00",
+    "channel": "server",
+    "result": "success",
+    "products": 8,
+    "first_population": false
   }
 ]
